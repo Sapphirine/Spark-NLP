@@ -7,7 +7,18 @@ import org.apache.spark.AccumulatorParam
 
 
 object SparkLDA {
-
+  
+  implicit def arrayToVector(s: Array[Int]) = new Vector(s.length);
+  
+  implicit object VectorAP extends AccumulatorParam[Vector] {
+    def zero(v: Vector) = new Vector(v.data.length)
+    def addInPlace(v1: Vector, v2: Vector):Vector = {
+      for (i <- 0 to v1.data.length-1) v1.data(i) += v2.data(i)
+          return v1
+    }
+  } 
+  
+  
 	def main(args: Array[String]) {
 
 		var (conf,sc)=initializeSpark()
@@ -30,14 +41,14 @@ object SparkLDA {
 		var index=0;
 		var initDict:scala.collection.mutable.Map[String,Int]=scala.collection.mutable.Map[String,Int]();
 		var documents=textFile.map(line=>{
-      var topicDistrib=new Vector(numTopics);
+      var topicDistrib=new Array[Int](numTopics);
 			index=index+1;
 			val lineCleaned=line.replaceAll("[^A-Za-z ]","").toLowerCase();
 			(index,new Tuple2(lineCleaned.split(" ").map(word=>{
 
 				if(word.length()>1&&(!stopWords.contains(word))){
 					var topic:Int =Integer.parseInt(Math.round(Math.random()*(numTopics-1)).toString);
-          topicDistrib.increment(topic);
+          topicDistrib(topic)+=1;
 					(word,topic);
 				}
 			}),topicDistrib))
@@ -63,13 +74,23 @@ object SparkLDA {
 
 	}
   
-  def {
-    
+  def gibbsSampling(docTopicDistrib:Array[Int],wordTopicDistrib:Array[Int],topicCount:Array[Int],alpha:Double,beta:Double,v:Int):Int={
+    val numTopic=docTopicDistrib.length;
+    var ro:Array[Double]=Array[Double](numTopic);
+    ro(0)=(docTopicDistrib(0)+alpha)*(wordTopicDistrib(0)+beta)/(topicCount(0)+v*beta);
+    for(i<-1 to numTopic-1){
+      ro(i)=ro(i-1)+(docTopicDistrib(0)+alpha)*(wordTopicDistrib(0)+beta)/(topicCount(0)+v*beta);
+    }
+    var x=Math.random()*ro(numTopic-1);
+    var i:Int=0;
+    while(x>ro(i))i+=1;
+    return i;
   }
 
 
 	class Vector(val size:Int) {
 		var data:Array[Int]=new Array[Int](size);
+  
 	def increment(index:Int){
 		data(index)+=1;
 	}
@@ -78,20 +99,17 @@ object SparkLDA {
 	}
 	def printIt(){
 		print("[")
-		for(i<-0 to data.size-1)print(data(i)+",");
+		for(i<-0 to data.length-1)print(data(i)+",");
 				print("]\n")
 	}
 	def forEach(callback:(Int) => Unit)={
-		for(i<-0 to data.size-1)callback(data(i));
+		for(i<-0 to data.length-1)callback(data(i));
 	}
 	}
-	implicit object VectorAP extends AccumulatorParam[Vector] {
-		def zero(v: Vector) = new Vector(v.data.size)
-		def addInPlace(v1: Vector, v2: Vector):Vector = {
-			for (i <- 0 to v1.data.size-1) v1.data(i) += v2.data(i)
-					return v1
-		}
-	} 
+  
+
+  
+	
 
 
 }
