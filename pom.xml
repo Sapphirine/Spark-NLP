@@ -1,8 +1,8 @@
 <project>
 	<groupId>edu.columbia</groupId>
-	<artifactId>simple-project</artifactId>
+	<artifactId>SparkLDA</artifactId>
 	<modelVersion>4.0.0</modelVersion>
-	<name>Simple Project</name>
+	<name>Spark LDA</name>
 	<packaging>jar</packaging>
 	<version>1.0</version>
 	<properties>
