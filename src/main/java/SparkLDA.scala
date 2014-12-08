@@ -1,6 +1,7 @@
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
+import org.apache.spark.rdd._
 import scala.collection.mutable._
 import org.apache.spark.AccumulatorParam
 
@@ -62,22 +63,27 @@ object SparkLDA {
 			(wrd,topic);
 			}),topicDistrib)
 		});
-		val dictionary=documents.flatMap(line=>line._1).map(tuple=>{
-			var value:Array[Int]=new Array[Int](numTopics);
+		val(dictionary,topicCount)=updateVariables(documents,numTopics);
+		(documents,dictionary,topicCount)
+	}
+  
+  def updateVariables(documents:RDD[(Array[(String, Int)], Array[Int])],numTopics:Int)={
+    val dictionary=documents.flatMap(line=>line._1).map(tuple=>{
+      var value:Array[Int]=new Array[Int](numTopics);
       if(!tuple._1.equals("")){
         value(tuple._2)+=1;
       }
-			(tuple._1,value)
-		}).reduceByKey((a:Array[Int],b)=>{
-			for(i<-0 to a.length-1){
-				a(i)+=b(i);
-			}
-			(a);
-		}).collect().toMap;
+      (tuple._1,value)
+    }).reduceByKey((a:Array[Int],b)=>{
+      for(i<-0 to a.length-1){
+        a(i)+=b(i);
+      }
+      (a);
+    }).collect().toMap;
     val topicCount:Array[Int]=new Array[Int](numTopics);
     dictionary.foreach(t=>topicCount.add(t._2));
-		(documents,dictionary,topicCount)
-	}
+    (dictionary,topicCount)
+  }
 
 	def printMetrix(){
 
