@@ -4,7 +4,7 @@ import org.apache.spark.SparkConf
 import org.apache.spark.rdd._
 import scala.collection.mutable._
 import org.apache.spark.AccumulatorParam
-
+import org.apache.spark.rdd
 
 
 object SparkLDA {
@@ -64,7 +64,10 @@ object SparkLDA {
 			}),topicDistrib)
 		});
 		val(dictionary,topicCount)=updateVariables(documents,numTopics);
-		(documents,dictionary,topicCount)
+		saveDocuments(documents,"hdfs://localhost:8020/out_documents4.txt")
+    saveDictionary(sc, dictionary,"hdfs://localhost:8020/out_dictionary4.txt")
+    saveTopicCount(sc, topicCount,"hdfs://localhost:8020/out_topicCount4.txt")
+    (documents,dictionary,topicCount)
 	}
   
   def updateVariables(documents:RDD[(Array[(String, Int)], Array[Int])],numTopics:Int)={
@@ -89,9 +92,32 @@ object SparkLDA {
 
 	}
 
-	def saveResult{
-
+	def saveDocuments (documents: RDD[(Array[(String, Int)], Array[Int])], path: String) {
+      documents.map {
+        case (topicAssign, topicDist) =>
+          val lenWrds = topicAssign.length
+          val probabilities = topicDist.map(n => n/lenWrds.toDouble).toList 
+          (probabilities)
+      }.saveAsTextFile(path)
 	}
+  
+  def saveDictionary(sc: SparkContext, dictionary: scala.collection.immutable.Map[String, Array[Int]], pathToSave: String) {
+    val dictionaryArray = dictionary.toArray
+    val temp = sc.parallelize(dictionaryArray).map {
+      case (word, topics) =>
+        val topArray = topics.toList
+        (word, topArray)
+    }
+    temp.saveAsTextFile(pathToSave)
+  }
+  
+  def saveTopicCount (sc: SparkContext, topicCount: Array[Int], path: String) {
+    val temp = sc.parallelize(topicCount).map {
+      case (count) =>
+        (count)
+    }
+    temp.saveAsTextFile(path)
+  }
 
 	def gibbsSampling(docTopicDistrib:Array[Int],wordTopicDistrib:Array[Int],topicCount:Array[Int],alpha:Double,beta:Double,v:Int):Int={
 			val numTopic=docTopicDistrib.length;
