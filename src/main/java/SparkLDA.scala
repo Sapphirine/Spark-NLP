@@ -29,88 +29,124 @@ object SparkLDA {
 		var index=0;
 		var dictionnary:scala.collection.mutable.Map[String,Int] = scala.collection.mutable.Map[String,Int]();
 
-    var wordToTopics:scala.collection.mutable.Map[String, Array[Int]] = new HashMap[String, Array[Int]]();
+		var wordToTopics:scala.collection.mutable.Map[String, Array[Int]] = new HashMap[String, Array[Int]]();
+
+		//var topMat = Array.ofDim[Int](2,2)
+		//topMat(0) = Array(1,2)
+		var topMat:scala.collection.mutable.ArrayBuffer[Array[Int]] = new scala.collection.mutable.ArrayBuffer[Array[Int]]()
+
+
+				//		val documents=textFile.map(line=>{
+				//			index=index+1;
+				//      println("in")
+				//			(index,line.split(" ").map(word => {
+				//          
+				//				if(!stopWords.contains(word)){
+				//					
+				//					var num=dictionnary.getOrElse(word,0)
+				//          
+				//					num=num+1;
+				//					dictionnary+=(word -> num);
+				//					(word, 1);
+				//				}
+				//			}))
+				//		});
 
 
 
+				val documents=textFile.map(line=>{
+					index=index+1;
+					val lineCleaned=line.replaceAll("[^A-Za-z ]","").toLowerCase();
+					(index,lineCleaned.split(" ").map(word=>{
+						if(word.length()>1&&(!stopWords.contains(word))){
+							var randNum = new scala.util.Random
+									(word,randNum.nextInt(numTopics-1))
+						}
+					}))
+				})
 
 
-		//		val documents=textFile.map(line=>{
-		//			index=index+1;
-		//      println("in")
-		//			(index,line.split(" ").map(word => {
-		//          
-		//				if(!stopWords.contains(word)){
-		//					
-		//					var num=dictionnary.getOrElse(word,0)
-		//          
-		//					num=num+1;
-		//					dictionnary+=(word -> num);
-		//					(word, 1);
-		//				}
-		//			}))
-		//		});
 
-		
+				/*
+    for (doc <- documents) {
 
-		val documents=textFile.map(line=>{
-			index=index+1;
-			val lineCleaned=line.replaceAll("[^A-Za-z ]","").toLowerCase();
-			(index,lineCleaned.split(" ").map(word=>{
-				dictionnary.put(word,0);
-				if(word.length()>1&&(!stopWords.contains(word))){
-					var randNum = new scala.util.Random
-							(word,randNum.nextInt(numTopics-1))
-				}
-			}))
-		})
-    
-    documents.foreach(
-				t=>t._2.foreach{f=> {
-					f match{
+      val tup3 = doc._2
 
-					case (word, topic) => {
+      for (tup2 <- tup3) {
+
+
+
+          tup2 match {
+          case (word, topic) => {
+
+            //grab the topic count array corresponding to the word, get the topic number, and pass increment the corresponding topic count
             val currentArray:Array[Int] = wordToTopics.getOrElse(word.toString(),new Array[Int](numTopics));
-            
+            currentArray(topic.asInstanceOf[Int])+=1;
+            wordToTopics.put(word.toString(), currentArray)
+
             //print the current array
-            
+
             for ( x <- 0 to numTopics-1 ) {
               print(currentArray(x) + " ")
             }
             println()
-            
-            
-            currentArray(topic.asInstanceOf[Int])+=1;
-            wordToTopics.put(word.toString(), currentArray)
+
+
+            topMat.append(currentArray)
+
           }
           case _ =>
+
+          }
+      }
+
+    }
+				 */
+
+				documents.collect.foreach(t=>t._2.foreach{f=> {
+					f match{
+					case (word, topic) => {
+
+						//grab the topic count array corresponding to the word, get the topic number, and pass increment the corresponding topic count
+						val currentArray:Array[Int] = wordToTopics.getOrElse(word.toString(),new Array[Int](numTopics));
+					  currentArray(topic.asInstanceOf[Int])+=1;
+					  wordToTopics.put(word.toString(), currentArray)
             
+            //add to dictionary
+            dictionnary.put(word.toString(),0);
+
+					}
+					case _ =>
+
 					}
 				}
+				}
+		    );
 
-
-				/*
-            val key = f.
-            var value = t._2
-
-            var currentList = wordToTopics.get(key);
-            var newList = Array(1, 2, 3)
-            var oldList = wordToTopics.put("string", newList)
-				 * 
-				 */
-				
-          
-        }
-        
-
-
-				);
+    println("size of dictionary :"+ dictionnary.size+" size file :"+textFile.count())
+		println("size of wordToTopics :"+ wordToTopics.size+" size file :"+textFile.count())
+		
+    //print out the map
+    for ( w <- wordToTopics ) {
+      val (key, topCount) = w
+      for (x <- 0 to topCount.length-1) {
+          print(topCount(x) + " ")
+      }
+      println(", word = " + key.toString())
+    }
+    println()
     
-    println(wordToTopics.isEmpty);
+    //print out the dictionary
+    for ( d <- dictionnary ) {
+      val (key, topCount) = d
+      println("word = " + key.toString())
+    }
+    println()
+    
+    (documents,dictionnary)
 
-
-		println("size of dictionnary :"+dictionnary.size+" size file :"+textFile.count())
-		(documents,dictionnary)
+		//val test:Array[Int] = topMat(0)
+		//println(test(0) + " " + test(1))
 
 
 		//val temp:scala.collection.mutable.LinkedList[Int] = wordToTopics.get(t._1)
