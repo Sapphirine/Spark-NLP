@@ -3,6 +3,7 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd._
 import scala.collection.mutable._
+import scala.collection.immutable._
 import org.apache.spark.AccumulatorParam
 
 
@@ -23,18 +24,19 @@ object SparkLDA {
 
 	def main(args: Array[String]){
 		val numtopics=10;
-		lda("hdfs://localhost:8020/README.md","","",numtopics,(50/numtopics),0.1,15,false);
+		lda("hdfs://localhost:8020/README.md","","",numtopics,(50/numtopics),0.1,1,false);
 	}
 
 	def lda(pathToFileIn:String,pathToFileOut:String,pathEvalLabels:String,numTopics:Int,alpha:Double,beta:Double,numIter:Int,deBug:Boolean){
 		val (conf,sc)=initializeSpark();
-		val(documents,dictionary,topicCount)=importText("hdfs://localhost:8020/README.md",numTopics,sc);
-
+		var(documents,dictionary,topicCount)=importText(pathToFileIn,numTopics,sc);
+		// dictionary.foreach(t=>{print(t._1);t._2.printIt()})
 		for(i<-0 to numIter){
 
-			//      buildVariables();
-			//      broadcast();
-			//      step();
+			var (doc,dict,tC)=step(sc,documents,numTopics,dictionary,topicCount,alpha,beta);
+			documents=doc;
+			dictionary=dict;
+			topicCount=tC;
 
 		}
 
@@ -62,29 +64,57 @@ object SparkLDA {
 			}
 			(wrd,topic);
 			}),topicDistrib)
-		});
+		}).cache();
 		val(dictionary,topicCount)=updateVariables(documents,numTopics);
 		(documents,dictionary,topicCount)
 	}
-  
-  def updateVariables(documents:RDD[(Array[(String, Int)], Array[Int])],numTopics:Int)={
-    val dictionary=documents.flatMap(line=>line._1).map(tuple=>{
-      var value:Array[Int]=new Array[Int](numTopics);
-      if(!tuple._1.equals("")){
-        value(tuple._2)+=1;
-      }
-      (tuple._1,value)
-    }).reduceByKey((a:Array[Int],b)=>{
-      for(i<-0 to a.length-1){
-        a(i)+=b(i);
-      }
-      (a);
-    }).collect().toMap;
-    val topicCount:Array[Int]=new Array[Int](numTopics);
-    dictionary.foreach(t=>topicCount.add(t._2));
-    (dictionary,topicCount)
-  }
 
+	def updateVariables(documents:RDD[(Array[(String, Int)], Array[Int])],numTopics:Int)={
+		val dictionary=documents.flatMap(line=>line._1).map(tuple=>{
+			var value:Array[Int]=new Array[Int](numTopics);
+		if(!tuple._1.equals("")){
+			value(tuple._2)+=1;
+		}
+		(tuple._1,value)
+		}).reduceByKey((a:Array[Int],b)=>{
+			for(i<-0 to a.length-1){
+				a(i)+=b(i);
+			}
+			(a);
+		}).collect().toMap;
+		val topicCount:Array[Int]=new Array[Int](numTopics);
+		dictionary.foreach(t=>topicCount.add(t._2));
+		(dictionary,topicCount)
+	}
+
+	def step(sc:SparkContext,documents:RDD[(Array[(String, Int)], Array[Int])],numTopics:Int,dict:scala.collection.immutable.Map[String, Array[Int]],tC: Array[Int],alpha:Double,beta:Double)={
+
+		val dictionary=sc.broadcast(dict);
+		val topicCount=sc.broadcast(tC);
+		val v=dict.size;
+
+		val doc=documents.map(tuple=>{
+			val topicDistrib=tuple._2
+					topicDistrib.printIt();
+			val line=tuple._1;
+			val lineupDated=line.map(t=>{
+				val word=t._1;
+				var top=t._2;
+				if(!t._1.equals("")){
+					println(word+" "+top);
+					topicDistrib.decrement(top);
+					top=gibbsSampling(topicDistrib,dictionary.value(word),topicCount.value,alpha,beta,v);
+					topicDistrib.increment(top);
+				}
+				(word,top)
+			})
+			topicDistrib.printIt();
+			(lineupDated,topicDistrib)
+		}).cache();
+		val(dicti,topC)=updateVariables(doc,numTopics);
+		(doc:RDD[(Array[(String, Int)], Array[Int])],dicti,topC)
+
+	}
 	def printMetrix(){
 
 	}
@@ -94,25 +124,20 @@ object SparkLDA {
 	}
 
 	def gibbsSampling(docTopicDistrib:Array[Int],wordTopicDistrib:Array[Int],topicCount:Array[Int],alpha:Double,beta:Double,v:Int):Int={
-			val numTopic=docTopicDistrib.length;
-			var ro:Array[Double]=Array[Double](numTopic);
+		docTopicDistrib.printIt();
+    wordTopicDistrib.printIt();
+    topicCount.printIt();
+    val numTopic=docTopicDistrib.length;
+			var ro:Array[Double]=new Array[Double](numTopic);
 			ro(0)=(docTopicDistrib(0)+alpha)*(wordTopicDistrib(0)+beta)/(topicCount(0)+v*beta);
 			for(i<-1 to numTopic-1){
-				ro(i)=ro(i-1)+(docTopicDistrib(0)+alpha)*(wordTopicDistrib(0)+beta)/(topicCount(0)+v*beta);
+				ro(i)=ro(i-1)+(docTopicDistrib(i)+alpha)*(wordTopicDistrib(i)+beta)/(topicCount(i)+v*beta);
 			}
 			var x=Math.random()*ro(numTopic-1);
 			var i:Int=0;
-			while(x>ro(i))i+=1;
+			while(x>ro(i)&&i<numTopic)i+=1;
 			return i;
 	}
-
-
-
-
-
-
-
-
 
 }
 
