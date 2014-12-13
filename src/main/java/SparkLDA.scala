@@ -46,7 +46,7 @@ object SparkLDA {
       System.gc();
 		}
     println("------ Saving ------");
-//		saveAll(documents,ll,sc,dictionary,topicCount,pathToFileOut);
+		saveAll(documents,ll,sc,dictionary,topicCount,pathToFileOut);
 		     documents.foreach(t=>{t._1.foreach(f=>print(f._1+" "+f._2+" ")); t._2.printIt()});
 	}
 	def initializeSpark()={
@@ -135,7 +135,8 @@ object SparkLDA {
 	}
 
 	def saveAll(documents: RDD[(Array[(String, Int)], Array[Int])],LogLikelihood:MutableList[Double],sc: SparkContext, dictionary: scala.collection.immutable.Map[String, Array[Int]], topicCount: Array[Int],path: String){
-		saveDocuments(documents,path);
+		removeAll(path);
+    saveDocuments(documents,path);
 		saveDictionary(sc,dictionary,path);
 		saveTopicCount(sc,topicCount,path);
 		saveLogLikelihood (sc,LogLikelihood, path)
@@ -145,8 +146,8 @@ object SparkLDA {
 		removeAll(path+"/documentsTopics");  
 		documents.map {
 		case (topicAssign, topicDist) =>
-		topicDist.normalize();
-		val probabilities = topicDist.toList 
+		var topicDistNorm:Array[Double] = topicDist.normalize();
+		val probabilities = topicDistNorm.toList.mkString(", ") 
 				(probabilities)
 		}.saveAsTextFile(path+"/documentsTopics")
 	}
@@ -155,9 +156,11 @@ object SparkLDA {
 		val dictionaryArray = dictionary.toArray
 				val temp = sc.parallelize(dictionaryArray).map {
 				case (word, topics) =>
-				topics.normalize();
-				val topArray = topics.toList
-						(word, topArray)
+				var topicsNorm:Array[Double] = topics.normalize();
+				val topArray = topicsNorm.toList.mkString(", ") 
+        val wordCount = topics.sumAll()
+        val temp2 = List(word, wordCount, topArray).mkString("\t")
+				(temp2)
 		}
 		temp.saveAsTextFile(path+"/wordsTopics")
 	}

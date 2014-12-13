@@ -28,10 +28,16 @@ class Vector(val vect:Array[Int]) {
     for(i<-0 to data.length-1)sum+=data(i);
     (sum)
   }
-  def normalize(){
-    var sum:Int=0;
-    for(i<-0 to data.length-1)sum+=data(i);
-    if (sum>0) {for(i<-0 to data.length-1)data(i)/=sum};
+  def normalize():Array[Double]={
+    var temp:Array[Double] = new Array[Double](data.length);
     
-  }
+    var sum:Double=0;
+    for(i<-0 to data.length-1)sum+=data(i);
+      if (sum>0) {
+        for(i<-0 to data.length-1) {
+          temp(i) = data(i).toDouble/sum
+        };
+      }
+    (temp) 
+    }
   }
