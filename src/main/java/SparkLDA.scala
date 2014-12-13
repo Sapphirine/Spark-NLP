@@ -24,11 +24,11 @@ object SparkLDA {
 	def main(args: Array[String]){
 
 		val numtopics=10;
-		lda("hdfs://localhost:8020/input/englishText_0_10000.txt","hdfs://localhost:8020/output","",numtopics,(50/numtopics),0.1,10,false);
+		lda(args(0),args(1),"local",numtopics,(50/numtopics),0.1,40,false);
 	}
 
-	def lda(pathToFileIn:String,pathToFileOut:String,pathEvalLabels:String,numTopics:Int,alpha:Double,beta:Double,numIter:Int,deBug:Boolean){
-		val (conf,sc)=initializeSpark();
+	def lda(pathToFileIn:String,pathToFileOut:String,URL:String,numTopics:Int,alpha:Double,beta:Double,numIter:Int,deBug:Boolean){
+		val (conf,sc)=initializeSpark(URL);
 		var(documents,dictionary,topicCount)=importText(pathToFileIn,numTopics,sc);
     println("------ Done with initialization ------");
     
@@ -49,13 +49,13 @@ object SparkLDA {
 //		saveAll(documents,ll,sc,dictionary,topicCount,pathToFileOut);
 		     documents.foreach(t=>{t._1.foreach(f=>print(f._1+" "+f._2+" ")); t._2.printIt()});
 	}
-	def initializeSpark()={
+	def initializeSpark(URL:String)={
 		Logger.getLogger("org").setLevel(Level.WARN)
 		Logger.getLogger("akka").setLevel(Level.WARN)
 		val conf = new SparkConf()
 		.setAppName("Simple Application")
-		.setMaster("local")
-//		.set("spark.executor.memory", "1g")
+		.setMaster(URL)
+		.set("spark.executor.memory", "1g")
 //		.set("spark.logConf","true")
 
 		val sc = new SparkContext(conf);
