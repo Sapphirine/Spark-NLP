@@ -1,11 +1,17 @@
+
+
 import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
 import org.apache.spark.rdd._
+import scala.collection._
 import scala.collection.mutable._
 import scala.collection.immutable._
 import org.apache.spark.AccumulatorParam
-import org.apache.spark.rdd
+import java.io._
+import org.apache.commons.math3.special._;
+import org.apache.log4j.Logger
+import org.apache.log4j.Level
 
 
 object SparkLDA {
@@ -13,36 +19,45 @@ object SparkLDA {
 	implicit def arrayToVector(s: Array[Int]) = new Vector(s);
 	implicit def vectorToArray(s: Vector) = s.data;
 
-	implicit object VectorAP extends AccumulatorParam[Vector] {
-		def zero(v: Vector) = new Vector(v.data.size)
-		def addInPlace(v1: Vector, v2: Vector):Vector = {
-			for (i <- 0 to v1.data.size-1) v1.data(i) += v2.data(i)
-					return v1
-		}
-	} 
 
 
 	def main(args: Array[String]){
+
 		val numtopics=10;
-		lda("hdfs://localhost:8020/README.md","","",numtopics,(50/numtopics),0.1,1,false);
+		lda("hdfs://localhost:8020/input/englishText_0_10000.txt","hdfs://localhost:8020/output","",numtopics,(50/numtopics),0.1,10,false);
 	}
 
 	def lda(pathToFileIn:String,pathToFileOut:String,pathEvalLabels:String,numTopics:Int,alpha:Double,beta:Double,numIter:Int,deBug:Boolean){
 		val (conf,sc)=initializeSpark();
 		var(documents,dictionary,topicCount)=importText(pathToFileIn,numTopics,sc);
+    println("------ Done with initialization ------");
+    
 		// dictionary.foreach(t=>{print(t._1);t._2.printIt()})
+		//    documents.foreach(t=>{t._1.foreach(f=>print(f._1+" "+f._2+" ")); t._2.printIt()});
+		val ll:MutableList[Double]= MutableList[Double]();
 		for(i<-0 to numIter){
-
+    println("------ Iteration "+i+" ------");
 			var (doc,dict,tC)=step(sc,documents,numTopics,dictionary,topicCount,alpha,beta);
+      documents.unpersist();
 			documents=doc;
 			dictionary=dict;
 			topicCount=tC;
-
+			ll+=logLikelihood(dictionary,topicCount,alpha,beta);
+      System.gc();
 		}
-
+    println("------ Saving ------");
+//		saveAll(documents,ll,sc,dictionary,topicCount,pathToFileOut);
+		     documents.foreach(t=>{t._1.foreach(f=>print(f._1+" "+f._2+" ")); t._2.printIt()});
 	}
 	def initializeSpark()={
-		val conf = new SparkConf().setAppName("Simple Application");
+		Logger.getLogger("org").setLevel(Level.WARN)
+		Logger.getLogger("akka").setLevel(Level.WARN)
+		val conf = new SparkConf()
+		.setAppName("Simple Application")
+		.setMaster("local")
+//		.set("spark.executor.memory", "1g")
+//		.set("spark.logConf","true")
+
 		val sc = new SparkContext(conf);
 		(conf,sc)
 	}
@@ -66,10 +81,7 @@ object SparkLDA {
 			}),topicDistrib)
 		}).cache();
 		val(dictionary,topicCount)=updateVariables(documents,numTopics);
-		saveDocuments(documents,"hdfs://localhost:8020/out_documents4.txt")
-    saveDictionary(sc, dictionary,"hdfs://localhost:8020/out_dictionary4.txt")
-    saveTopicCount(sc, topicCount,"hdfs://localhost:8020/out_topicCount4.txt")
-    (documents,dictionary,topicCount)
+		(documents,dictionary,topicCount)
 	}
 
 	def updateVariables(documents:RDD[(Array[(String, Int)], Array[Int])],numTopics:Int)={
@@ -98,20 +110,20 @@ object SparkLDA {
 
 		val doc=documents.map(tuple=>{
 			val topicDistrib=tuple._2
-					topicDistrib.printIt();
-			val line=tuple._1;
+					//					topicDistrib.printIt();
+					val line=tuple._1;
 			val lineupDated=line.map(t=>{
 				val word=t._1;
 				var top=t._2;
 				if(!t._1.equals("")){
-					println(word+" "+top);
+					//					println(word+" "+top);
 					topicDistrib.decrement(top);
 					top=gibbsSampling(topicDistrib,dictionary.value(word),topicCount.value,alpha,beta,v);
 					topicDistrib.increment(top);
 				}
 				(word,top)
 			})
-			topicDistrib.printIt();
+			//			topicDistrib.printIt();
 			(lineupDated,topicDistrib)
 		}).cache();
 		val(dicti,topC)=updateVariables(doc,numTopics);
@@ -122,38 +134,56 @@ object SparkLDA {
 
 	}
 
-	def saveDocuments (documents: RDD[(Array[(String, Int)], Array[Int])], path: String) {
-      documents.map {
-        case (topicAssign, topicDist) =>
-          val lenWrds = topicAssign.length
-          val probabilities = topicDist.map(n => n/lenWrds.toDouble).toList 
-          (probabilities)
-      }.saveAsTextFile(path)
+	def saveAll(documents: RDD[(Array[(String, Int)], Array[Int])],LogLikelihood:MutableList[Double],sc: SparkContext, dictionary: scala.collection.immutable.Map[String, Array[Int]], topicCount: Array[Int],path: String){
+		saveDocuments(documents,path);
+		saveDictionary(sc,dictionary,path);
+		saveTopicCount(sc,topicCount,path);
+		saveLogLikelihood (sc,LogLikelihood, path)
 	}
-  
-  def saveDictionary(sc: SparkContext, dictionary: scala.collection.immutable.Map[String, Array[Int]], pathToSave: String) {
-    val dictionaryArray = dictionary.toArray
-    val temp = sc.parallelize(dictionaryArray).map {
-      case (word, topics) =>
-        val topArray = topics.toList
-        (word, topArray)
-    }
-    temp.saveAsTextFile(pathToSave)
-  }
-  
-  def saveTopicCount (sc: SparkContext, topicCount: Array[Int], path: String) {
-    val temp = sc.parallelize(topicCount).map {
-      case (count) =>
-        (count)
-    }
-    temp.saveAsTextFile(path)
-  }
+
+	def saveDocuments (documents: RDD[(Array[(String, Int)], Array[Int])], path: String) {
+		removeAll(path+"/documentsTopics");  
+		documents.map {
+		case (topicAssign, topicDist) =>
+		topicDist.normalize();
+		val probabilities = topicDist.toList 
+				(probabilities)
+		}.saveAsTextFile(path+"/documentsTopics")
+	}
+	def saveDictionary(sc: SparkContext, dictionary: scala.collection.immutable.Map[String, Array[Int]], path: String) {
+		removeAll(path+"/wordsTopics");
+		val dictionaryArray = dictionary.toArray
+				val temp = sc.parallelize(dictionaryArray).map {
+				case (word, topics) =>
+				topics.normalize();
+				val topArray = topics.toList
+						(word, topArray)
+		}
+		temp.saveAsTextFile(path+"/wordsTopics")
+	}
+
+	def saveTopicCount (sc: SparkContext, topicCount: Array[Int], path: String) {
+		removeAll(path+"/topicCount");
+		val temp = sc.parallelize(topicCount).map {
+		case (count) =>
+		(count)
+		}
+		temp.saveAsTextFile(path+"/topicCount")
+	}
+	def saveLogLikelihood (sc: SparkContext,LogLikelihood:MutableList[Double], path: String) {
+		removeAll(path+"/logLikelihood");
+		val temp = sc.parallelize(LogLikelihood).map {
+		case (count) =>
+		(count)
+		}
+		temp.saveAsTextFile(path+"/logLikelihood")
+	}
 
 	def gibbsSampling(docTopicDistrib:Array[Int],wordTopicDistrib:Array[Int],topicCount:Array[Int],alpha:Double,beta:Double,v:Int):Int={
-		docTopicDistrib.printIt();
-    wordTopicDistrib.printIt();
-    topicCount.printIt();
-    val numTopic=docTopicDistrib.length;
+			//			docTopicDistrib.printIt();
+			//			wordTopicDistrib.printIt();
+			//			topicCount.printIt();
+			val numTopic=docTopicDistrib.length;
 			var ro:Array[Double]=new Array[Double](numTopic);
 			ro(0)=(docTopicDistrib(0)+alpha)*(wordTopicDistrib(0)+beta)/(topicCount(0)+v*beta);
 			for(i<-1 to numTopic-1){
@@ -161,8 +191,30 @@ object SparkLDA {
 			}
 			var x=Math.random()*ro(numTopic-1);
 			var i:Int=0;
-			while(x>ro(i)&&i<numTopic)i+=1;
+			while(x>ro(i)&&i<numTopic-1)i+=1;
 			return i;
+	}
+
+	def logLikelihood(dictionary: scala.collection.immutable.Map[String, Array[Int]],topicCount:Array[Int],alpha:Double,beta:Double):Double={
+			val V:Int=dictionary.size;
+	val numTopics:Int=topicCount.length-1;
+	var logLikelihood:Double=numTopics*(Gamma.logGamma(V*beta)-V*Gamma.logGamma(beta));
+
+	for (i<-0 to numTopics){
+		var sum:Double=0;
+	dictionary.foreach{t=>
+	sum+=Gamma.logGamma(t._2(i)+beta);
+	}
+	logLikelihood+=sum-Gamma.logGamma(topicCount(i)+V*beta);
+	}
+
+	(logLikelihood)
+	}
+
+	def removeAll(pathDir: String) = {
+		def delete(file: File): Array[(String, Boolean)] = {
+				Option(file.listFiles).map(_.flatMap(f => delete(f))).getOrElse(Array()) :+ (file.getPath -> file.delete)
+		}
 	}
 
 }
