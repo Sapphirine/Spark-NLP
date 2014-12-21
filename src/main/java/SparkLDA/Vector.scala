@@ -1,4 +1,4 @@
-
+package SparkLDA
 
 class Vector(val vect:Array[Int]) {
     var data:Array[Int]=vect;
